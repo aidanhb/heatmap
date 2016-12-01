@@ -5,9 +5,10 @@ import numpy as np
 import pandas as pd
 from pylab import rcParams
 import pyproj
+import matplotlib as mpl
 import matplotlib.pyplot as plot
 import matplotlib.cm as cm
-from matplotlib.colors import Normalize
+import matplotlib.colors as mc
 from matplotlib.collections import PatchCollection
 from mpl_toolkits.basemap import Basemap
 from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
@@ -68,33 +69,29 @@ class heatmap:
 				resolution = 'i',
 				suppress_ticks = True)
 
-		#print(m.llcrnrlat, m.llcrnrlon)
-		#print(m.urcrnrlat, m.urcrnrlon)
-		#print()
-
 		return m
 
 
 	# Convenience functions for working with colour ramps and bars
-	def colorbar_index(ncolors, cmap, labels=None, **kwargs):
+	def colorbar_index(self, ncolors, cmap, labels=None, **kwargs):
 		"""
 		This is a convenience function to stop you making off-by-one errors
 		Takes a standard colour ramp, and discretizes it,
 		then draws a colour bar with correctly aligned labels
 		"""
-		cmap = cmap_discretize(cmap, ncolors)
+		cmap = self.cmap_discretize(cmap, ncolors)
 		mappable = cm.ScalarMappable(cmap=cmap)
 		mappable.set_array([])
 		mappable.set_clim(-0.5, ncolors+0.5)
 		colorbar = plot.colorbar(mappable, **kwargs)
 		colorbar.set_ticks(np.linspace(0, ncolors, ncolors))
 		colorbar.set_ticklabels(range(ncolors))
-		if labels:
+		if labels.any():
 			colorbar.set_ticklabels(labels)
 		return colorbar
 
 
-	def cmap_discretize(cmap, N):
+	def cmap_discretize(self, cmap, N):
 		"""
 		Return a discrete colormap from the continuous colormap cmap.
 
@@ -108,63 +105,58 @@ class heatmap:
 
 		"""
 		if type(cmap) == str:
-			cmap = get_cmap(cmap)
+			cmap = cm.get_cmap(cmap)
 			colors_i = np.concatenate((np.linspace(0, 1., N), (0., 0., 0., 0.)))
 			colors_rgba = cmap(colors_i)
 			indices = np.linspace(0, 1., N + 1)
 			cdict = {}
 		for ki, key in enumerate(('red', 'green', 'blue')):
-			cdict[key] = [(indices[i], colors_rgba[i - 1, ki], colors_rgba[i, ki]) for i in xrange(N + 1)]
-		return matplotlib.colors.LinearSegmentedColormap(cmap.name + "_%d" % N, cdict, 1024)
+			cdict[key] = [(indices[i], colors_rgba[i - 1, ki], colors_rgba[i, ki]) for i in range(N + 1)]
+		return mc.LinearSegmentedColormap(cmap.name + "_%d" % N, cdict, 1024)
 
 
-	def display(self, dataframe, basemap, numcells, start, end):
-		map_points = pd.Series([Point(basemap(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(dataframe['long'], dataframe['lat'])])
-		emergency_points = MultiPoint(list(map_points.values))
-		heatmaps = self.get_heatmaps(basemap, dataframe, numcells)
+	def display(self, start, end):
 
-		heatmap = np.zeros((numcells, numcells))
-
-		for i in range(start, end):
-			if (i < len(heatmaps)):
-				heatmap = np.add(heatmap, heatmaps[i])
-
-		x = [geom.x for geom in emergency_points]
-		y = [geom.y for geom in emergency_points]
+		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
+		heatmap= self.get_time_window_heatmap()
+		x, y, numpoints = self.get_time_window_points()
 
 		plot.clf()
 		fig = plot.figure()
 		ax = fig.add_subplot(111, axisbg = 'w', frame_on = False)
 
-		basemap.arcgisimage(service='ESRI_StreetMap_World_2D', xpixels = 12000, verbose = True, zorder = 2)
+		if self.arcgisimage == None:
+			self.arcgisimage = self.basemap.arcgisimage(service='ESRI_StreetMap_World_2D', xpixels = 12000, verbose = True, zorder = 2)
+		else:
+			plot.imshow(self.arcgisimage.make_image(), extent = extent, origin = 'lower', zorder = 2)
 
 		# we don't need to pass points to basemap() because we calculated using map_points and shapefile polygons
-		basemap.scatter(
+		self.scatter = self.basemap.scatter(
 			x,
 			y,
 			5, marker='o', lw=.25,
 			facecolor='#ff0000', edgecolor='w',
 			alpha=0.9, antialiased=True,
-			label='Emergencies', zorder=3)
-
-		# plot boroughs by adding the PatchCollection to the axes instance
-		# ax.add_collection(PatchCollection(df_map['patches'].values, match_original=True))
+			label='Emergencies', zorder=4)
 
 		# copyright and source data info
-		smallprint = ax.text(
+		self.smallprint = smallprint = ax.text(
 			1.03, 0,
-			'Total points: %s\n$\copyright$ RapidSOS 2016' % len(emergency_points),
+			'Total points: %s\n$\copyright$ RapidSOS 2016' % numpoints,
 			ha='right', va='bottom',
 			size=4,
 			color='#555555',
-			transform=ax.transAxes)
-
-		extent = [basemap.llcrnrlon, basemap.urcrnrlon, basemap.llcrnrlat, basemap.urcrnrlat]
+			transform=ax.transAxes,
+			zorder = 5)
 
 		a = np.random.random((16, 16))
 
-		plot.imshow(heatmap, extent = extent, cmap = 'inferno', alpha = .4, interpolation = 'nearest', origin = 'lower')
+		cmap = 'inferno'
+		self.heatimage = plot.imshow(heatmap, extent = extent, cmap = cmap, alpha = .4, interpolation = 'nearest', origin = 'lower', zorder = 3)
 		#plot.show()
+
+		cb = self.colorbar_index(ncolors=self.ncolors, cmap=cmap, shrink=0.5, labels = np.linspace(0, heatmap.max(), self.ncolors))
+		cb.ax.tick_params(labelsize=6)
 
 		plot.title("")
 		plot.tight_layout()
@@ -173,22 +165,18 @@ class heatmap:
 		plot.show()
 
 
-	# Creates 3D array of per-hour layers, each layer an n/m degree georgraphic array
-	def get_heatmaps(self, basemap, dataframe, numcells):
-		#h = basemap.urcrnrlat - basemap.llcrnrlat
-		#w = basemap.urcrnrlon - basemap.llcrnrlon
+	# Creates 3D array of per-time unit layers, each layer an n/m degree georgraphic array, as well as corresponding data frames
+	# per time unit
+	def set_heatmaps(self, numcells):
+		self.numcells = numcells
+
 		heatmaps = []
+		dataframes = []
+
 		d = dt.timedelta(microseconds=1)
 
-		#print(basemap.llcrnrlon, basemap.urcrnrlon)
-
-		x = np.linspace(basemap.llcrnrlon, basemap.urcrnrlon, numcells + 1)
-		y = np.linspace(basemap.llcrnrlat, basemap.urcrnrlat, numcells + 1)
-
-		#print(self.min_lat, self.min_long)
-		#print(self.max_lat, self.max_long)
-		#print(x,y)
-		#print()
+		x = np.linspace(self.basemap.llcrnrlon, self.basemap.urcrnrlon, numcells + 1)
+		y = np.linspace(self.basemap.llcrnrlat, self.basemap.urcrnrlat, numcells + 1)
 
 		a, b = 0, 1
 
@@ -196,23 +184,48 @@ class heatmap:
 			points = None
 			start = self.times[a]
 			end = self.times[b]
-				# Slicing just up to but not including end is necessary since
-				# Pandas is upper bound inclusive
-			points = dataframe.loc[start:end - d]
+			# Slicing just up to but not including end is necessary since
+			# Pandas is upper bound inclusive
+			points = self.dataframe.loc[start:end - d]
 			heatmap = np.zeros((len(y) - 1, len(x) - 1))
 
 			for point in points.itertuples():
-				#print(point)
-				#print(point[1], point[2])
 				heatmap[np.searchsorted(y, point[1]) - 1][np.searchsorted(x, point[2]) - 1] += 1
 
 			heatmaps.append(heatmap)
+			dataframes.append(points)
+
 			a += 1
 			b += 1
 
-			#print(heatmap)
+		self.currentmap = heatmaps
+		self.currentframe = dataframes
 
-		return heatmaps
+
+	def get_time_window_points(self):
+
+		points_list = []
+		for i in range(self.start, self.end):
+			frame = self.currentframe[i]
+			map_points = pd.Series([Point(self.basemap(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(frame['long'], frame['lat'])])
+			points_list += list(map_points.values)
+
+		raw_points = MultiPoint(points_list)
+		x = [geom.x for geom in raw_points]
+		y = [geom.y for geom in raw_points]
+
+		return x, y , len(raw_points)
+
+
+
+	def get_time_window_heatmap(self):
+
+		heatmap = np.zeros((self.numcells, self.numcells))
+		for i in range(self.start, self.end):
+			if (i < len(self.currentmap)):
+				heatmap = np.add(heatmap, self.currentmap[i])
+
+		return heatmap
 
 
 	def set_times(self, units):
@@ -240,14 +253,35 @@ class heatmap:
 			curr += delta
 
 		self.times = times
+		self.start = 0
+		self.end = len(self.times) - 1
 
 
-	def __init__(self, file_path, time_units, win_height, win_width):
+	def change_cellsize(self, cellsize):
+		self.set_heatmaps(cellsize)
+		self.display(self.start, self.end)
 
-		rcParams['figure.figsize'] = win_height, win_width
+
+	def change_time_units(self, units):
+		self.set_times()
+		self.display(self.start, self.end)
+
+
+	def change_time_window(self, start, end):
+		self.start = start
+		self.end = end
+		self.display(self.start, self.end) 
+
+
+	def __init__(self, file_path, time_units='HOUR', winsize=10):
+		#mpl.rc('savefig', dpi=1200)
+		rcParams['figure.figsize'] = winsize, winsize
 
 		self.EXTRA = 0.01
 
+		self.numcells = 30
+
+		self.ncolors = 5
 		self.min_lat = 91
 		self.max_lat = -91
 		self.min_long = 181
@@ -255,14 +289,26 @@ class heatmap:
 		self.first_timestamp = sys.maxsize
 		self.last_timestamp = 0
 		self.times = []
+		self.start = 0
+		self.end = 0
+		self.heatmaps = {}
+		self.dataframes = {}
+		self.currentmap = []
+		self.currentframe = []
 
-		data = self.load_data(file_path)
-		dataframe = self.create_dataframe(data)
-		basemap = self.create_basemap()
+		self.data = self.load_data(file_path)
+		self.dataframe = self.create_dataframe(self.data)
+		self.basemap = self.create_basemap()
+
+		self.arcgisimage = None
+		self.scatter = None
+		self.heatimage = None
+		self.smallprint = None
 
 		self.set_times(time_units)
 
-		#print(self.times)
-		self.display(dataframe, basemap, 30, 0, 7)
+		self.set_heatmaps(self.numcells)
+
+		self.display(self.start, self.end)
 
 
