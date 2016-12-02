@@ -1,54 +1,73 @@
 import csv
 import datetime as dt
+from enum import Enum
 import math
+import matplotlib.cm as cm
+import matplotlib.colors as mc
+import matplotlib.pyplot as plot
+from matplotlib.collections import PatchCollection
+from mpl_toolkits.basemap import Basemap
 import numpy as np
 import pandas as pd
 from pylab import rcParams
 import pyproj
-import matplotlib as mpl
-import matplotlib.pyplot as plot
-import matplotlib.cm as cm
-import matplotlib.colors as mc
-from matplotlib.collections import PatchCollection
-from mpl_toolkits.basemap import Basemap
 from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
 import sys
 
+class datatype(Enum):
+	COUNT = 1
+	VALUES = 2
+
 class heatmap:
 
-	def load_data(self, file_path):
+	# Load csv data file of format latitude, longitude, timestamp/n.
+	# Find min and max lat, lon, and time and save values as instance variables.
+	# Return dictionary of lists of values.
+	def load_data(self, file_path, datatype=datatype.COUNT):
 		output = {}
 		output['lat'] = []
 		output['long'] = []
 		output['time'] = []
+		if datatype == datatype.VALUES:
+			output['value'] = []
 
 		with open(file_path, 'r') as file:
 			reader = csv.reader(file)
 			for row in reader:
-				lat = float(row[0])
-				lng = float(row[1])
-				timestamp = int(row[2])
+
+				timestamp = int(row[0])
+				lat = float(row[1])
+				lon = float(row[2])
 				time = dt.datetime.fromtimestamp(timestamp)
 
 				output['lat'].append(lat)
-				output['long'].append(lng)
+				output['long'].append(lon)
 				output['time'].append(time)
+
+				if datatype == datatype.VALUES:
+					temp = float(row[3])
+					output['value'].append(temp)
 
 				self.min_lat = lat if lat < self.min_lat else self.min_lat
 				self.max_lat = lat if lat > self.max_lat else self.max_lat
-				self.min_long = lng if lng < self.min_long else self.min_long
-				self.max_long = lng if lng > self.max_long else self.max_long
+				self.min_long = lon if lon < self.min_long else self.min_long
+				self.max_long = lon if lon > self.max_long else self.max_long
 				self.first_timestamp = timestamp if timestamp < self.first_timestamp else self.first_timestamp
 				self.last_timestamp = timestamp if timestamp > self.last_timestamp else self.last_timestamp
 
 		return output
 
 
-	def create_dataframe(self, llt_dict):
-		df = pd.DataFrame(np.array([llt_dict['lat'], llt_dict['long']]).T, index = llt_dict['time'], columns = ['lat', 'long'])
+	# Creates Pandas dataframe object with lat and lon columns indexed by time
+	def create_dataframe(self, llt_dict, datatyper=datatype.COUNT):
+		if datatype == datatype.VALUES:
+			df = pd.DataFrame(np.array([llt_dict['lat'], llt_dict['long'], llt_dict['value']]).T, index = llt_dict['time'], columns = ['lat', 'long', 'value'])
+		else:
+			df = pd.DataFrame(np.array([llt_dict['lat'], llt_dict['long']]).T, index = llt_dict['time'], columns = ['lat', 'long'])
 		return df
 
 
+	# Initializes basemap with transverse mercator projection large enough to contain all data points
 	def create_basemap(self):
 		side = max(self.max_long - self.min_long, self.max_lat - self.min_lat)
 		rad = side / 2.0 + side * self.EXTRA
@@ -72,22 +91,24 @@ class heatmap:
 		return m
 
 
-	# Convenience functions for working with colour ramps and bars
+	# Convenience functions for working with colour ramps and bars. Taken from sensitivecities.com.
 	def colorbar_index(self, ncolors, cmap, labels=None, **kwargs):
 		"""
 		This is a convenience function to stop you making off-by-one errors
 		Takes a standard colour ramp, and discretizes it,
 		then draws a colour bar with correctly aligned labels
 		"""
-		cmap = self.cmap_discretize(cmap, ncolors)
+		cmap = self.cmap_discretize(cmap, ncolors + 1)
 		mappable = cm.ScalarMappable(cmap=cmap)
 		mappable.set_array([])
-		mappable.set_clim(-0.5, ncolors+0.5)
+		mappable.set_clim(-.5, ncolors+.5)
 		colorbar = plot.colorbar(mappable, **kwargs)
-		colorbar.set_ticks(np.linspace(0, ncolors, ncolors))
-		colorbar.set_ticklabels(range(ncolors))
+		print(ncolors)
+		print(np.linspace(0, ncolors, ncolors + 1))
+		colorbar.set_ticks(np.linspace(0, ncolors, ncolors + 1))
+		colorbar.set_ticklabels(np.linspace(0, ncolors, ncolors + 1))
 
-		if labels.any():
+		if labels:
 			colorbar.set_ticklabels(labels)
 		return colorbar
 
@@ -116,22 +137,26 @@ class heatmap:
 		return mc.LinearSegmentedColormap(cmap.name + "_%d" % N, cdict, 1024)
 
 
+	#calculate heatmap and points to display for time window (self.start, self.end).
+	# scatter points on basemap and plot heatmap over it.
 	def display(self):
 		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
 
+		# setting heatmap to show and getting data points that lie within time window
 		self.set_showmap()
 		x, y = self.get_time_window_points()
 
+		# clear figure and add subplot
 		plot.clf()
 		fig = plot.figure()
 		ax = fig.add_subplot(111, axisbg = 'w', frame_on = False)
 
+		# load arcgis streetmap image into basemap, if none exists. Else show lower res streetmap image.
 		if self.arcgisimage == None:
 			self.arcgisimage = self.basemap.arcgisimage(dpi = 300, service='ESRI_StreetMap_World_2D', xpixels = 12000, zorder = 2)
 		else:
 			plot.imshow(self.arcgisimage.make_image(), extent = extent, origin = 'lower', zorder = 2)
 
-		# we don't need to pass points to basemap() because we calculated using map_points and shapefile polygons
 		self.scatter = self.basemap.scatter(
 			x,
 			y,
@@ -150,13 +175,12 @@ class heatmap:
 			transform=ax.transAxes,
 			zorder = 5)
 
-		a = np.random.random((16, 16))
+		cmap = 'plasma'
+		self.heatimage = plot.imshow(self.showmap, extent = extent, cmap = cmap, alpha = .4, origin = 'lower', zorder = 3)
+		# unifinished hexmap implementation.
+		#plot.hexbin(np.array(x), np.array(y), extent = extent, cmap = cmap, alpha = .4, gridsize = self.numcells, edgecolors = 'none')
 
-		cmap = 'inferno'
-		self.heatimage = plot.imshow(self.showmap, extent = extent, cmap = cmap, alpha = .4, interpolation = 'nearest', origin = 'lower', zorder = 3)
-		#plot.show()
-
-		cb = self.colorbar_index(ncolors=self.ncolors, cmap=cmap, shrink=0.5, labels = np.linspace(0, self.showmap.max(), self.ncolors))
+		cb = self.colorbar_index(ncolors=int(self.showmap.max()), cmap=cmap, shrink=0.5)
 		cb.ax.tick_params(labelsize=6)
 
 		plot.title("")
@@ -167,11 +191,13 @@ class heatmap:
 
 		cell_mi_dist = self.get_cell_distance('MILES')
 		cell_km_dist = self.get_cell_distance('KILOMETERS')
+		print("Number of points: ", self.numpoints)
 		print("Cell size: ", round(cell_mi_dist, 5), "miles, or ", round(cell_km_dist, 5), " kilometers.")
 
 
-	# Creates 3D array of per-time unit layers, each layer an n/m degree georgraphic array, as well as corresponding data frames
-	# per time unit
+	# Creates 3D array of per-time-unit (1 day, 1 hour, etc.) layers, each layer an n/m cell georgraphic array, as well as corresponding data frames
+	# per time-unit.
+	# Sets instance variables to these objects
 	def set_heatmaps(self, numcells):
 		self.numcells = numcells
 
@@ -207,6 +233,8 @@ class heatmap:
 		self.dataframes = dataframes
 
 
+	# Get lists of x and y coordinates that lie within current time window (self.start, self.end).
+	# Also reset self.numpoints to be the number of points in current time window.
 	def get_time_window_points(self):
 
 		points_list = []
@@ -225,6 +253,7 @@ class heatmap:
 		return x, y
 
 
+	# Set self.showmap to be heatmap corresponding to current time window.
 	def set_showmap(self):
 
 		heatmap = np.zeros((self.numcells, self.numcells))
@@ -235,6 +264,8 @@ class heatmap:
 		self.showmap = heatmap
 
 
+	# Sets self.times array to new array starting at earliest data point time rounded down to nearest specified time unit,
+	# to latest data point time, rounded up, incrementing by specified time unit.
 	def set_times(self, units):
 		start = dt.datetime.fromtimestamp(self.first_timestamp)
 		end = dt.datetime.fromtimestamp(self.last_timestamp)
@@ -264,10 +295,13 @@ class heatmap:
 		self.end = len(self.times) - 1
 
 
+	# Calcualates percentage of data points that get their own cell.
+	# Currently unused.
 	def cell_point(self):
 		return np.count_nonzero(self.showmap) / self.numpoints
 
 
+	# Use Haversine Formula to calculate (approximate) heatmap cell size in miles or km.
 	def get_cell_distance(self, mk):
 		lon1_degrees, lon2_degrees = self.basemap.llcrnrlon, self.basemap.llcrnrlon + (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / self.numcells
 		lat1_degrees, lat2_degrees = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / 2, (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / 2
@@ -302,8 +336,7 @@ class heatmap:
 		self.display() 
 
 
-	def __init__(self, file_path, time_units='HOUR', winsize=8):
-		#mpl.rc('savefig', dpi=1200)
+	def __init__(self, file_path, time_units='HOUR', winsize=8, datatype=datatype.COUNT):
 		rcParams['figure.figsize'] = winsize, winsize
 
 		self.EXTRA = 0.01
@@ -320,6 +353,9 @@ class heatmap:
 		self.times = []
 		self.start = 0
 		self.end = 0
+		# Dictionaries to store computed heatmaps and points for given cell sizes.
+		# Key should be numcells.
+		# Not currently used.
 		self.allmaps = {}
 		self.allframes = {}
 		# array of heatmaps for current cellsize
@@ -329,7 +365,7 @@ class heatmap:
 		self.showmap = []
 		self.numpoints = 0
 
-		self.data = self.load_data(file_path)
+		self.data = self.load_data(file_path, datatype)
 		self.dataframe = self.create_dataframe(self.data)
 		self.basemap = self.create_basemap()
 
