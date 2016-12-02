@@ -12,3 +12,7 @@ lib64
 *.pyo
 build/
 dist/
+*.DS_Store
+.ipynb_checkpoints
+heatmap/__pychache__/*
+heatmap/data/*.png
