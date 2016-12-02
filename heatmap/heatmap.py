@@ -86,6 +86,7 @@ class heatmap:
 		colorbar = plot.colorbar(mappable, **kwargs)
 		colorbar.set_ticks(np.linspace(0, ncolors, ncolors))
 		colorbar.set_ticklabels(range(ncolors))
+
 		if labels.any():
 			colorbar.set_ticklabels(labels)
 		return colorbar
@@ -115,10 +116,10 @@ class heatmap:
 		return mc.LinearSegmentedColormap(cmap.name + "_%d" % N, cdict, 1024)
 
 
-	def display(self, start, end):
-
+	def display(self):
 		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
-		self.get_time_window_heatmap()
+
+		self.set_showmap()
 		x, y = self.get_time_window_points()
 
 		plot.clf()
@@ -140,7 +141,7 @@ class heatmap:
 			label='Emergencies', zorder=4)
 
 		# copyright and source data info
-		self.smallprint = smallprint = ax.text(
+		self.smallprint = ax.text(
 			1.03, 0,
 			'Total points: %s\n$\copyright$ RapidSOS 2016' % self.numpoints,
 			ha='right', va='bottom',
@@ -202,17 +203,18 @@ class heatmap:
 			a += 1
 			b += 1
 
-		self.currentmaps = heatmaps
-		self.currentframes = dataframes
+		self.heatmaps = heatmaps
+		self.dataframes = dataframes
 
 
 	def get_time_window_points(self):
 
 		points_list = []
 		for i in range(self.start, self.end):
-			frame = self.currentframes[i]
-			map_points = pd.Series([Point(self.basemap(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(frame['long'], frame['lat'])])
-			points_list += list(map_points.values)
+			if (i < len(self.dataframes)):
+				frame = self.dataframes[i]
+				map_points = pd.Series([Point(self.basemap(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(frame['long'], frame['lat'])])
+				points_list += list(map_points.values)
 
 		raw_points = MultiPoint(points_list)
 		x = [geom.x for geom in raw_points]
@@ -223,12 +225,12 @@ class heatmap:
 		return x, y
 
 
-	def get_time_window_heatmap(self):
+	def set_showmap(self):
 
 		heatmap = np.zeros((self.numcells, self.numcells))
 		for i in range(self.start, self.end):
-			if (i < len(self.currentmaps)):
-				heatmap = np.add(heatmap, self.currentmaps[i])
+			if (i < len(self.heatmaps)):
+				heatmap = np.add(heatmap, self.heatmaps[i])
 
 		self.showmap = heatmap
 
@@ -283,18 +285,21 @@ class heatmap:
 
 	def change_numcells(self, numcells):
 		self.set_heatmaps(numcells)
-		self.display(self.start, self.end)
+		self.set_showmap()
+		self.display()
 
 
 	def change_time_units(self, units):
-		self.set_times()
-		self.display(self.start, self.end)
+		self.set_times(units)
+		self.set_heatmaps(self.numcells)
+		self.set_showmap()
+		self.display()
 
 
 	def change_time_window(self, start, end):
 		self.start = start
 		self.end = end
-		self.display(self.start, self.end) 
+		self.display() 
 
 
 	def __init__(self, file_path, time_units='HOUR', winsize=8):
@@ -315,11 +320,11 @@ class heatmap:
 		self.times = []
 		self.start = 0
 		self.end = 0
-		self.heatmaps = {}
-		self.dataframes = {}
+		self.allmaps = {}
+		self.allframes = {}
 		# array of heatmaps for current cellsize
-		self.currentmaps = []
-		self.currentframes = []
+		self.heatmaps = []
+		self.dataframes = []
 		# heatmap for current time window
 		self.showmap = []
 		self.numpoints = 0
@@ -337,6 +342,6 @@ class heatmap:
 
 		self.set_heatmaps(self.numcells)
 
-		self.display(self.start, self.end)
+		self.display()
 
 
