@@ -118,15 +118,15 @@ class heatmap:
 	def display(self, start, end):
 
 		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
-		heatmap= self.get_time_window_heatmap()
-		x, y, numpoints = self.get_time_window_points()
+		self.get_time_window_heatmap()
+		x, y = self.get_time_window_points()
 
 		plot.clf()
 		fig = plot.figure()
 		ax = fig.add_subplot(111, axisbg = 'w', frame_on = False)
 
 		if self.arcgisimage == None:
-			self.arcgisimage = self.basemap.arcgisimage(service='ESRI_StreetMap_World_2D', xpixels = 12000, verbose = True, zorder = 2)
+			self.arcgisimage = self.basemap.arcgisimage(dpi = 300, service='ESRI_StreetMap_World_2D', xpixels = 12000, zorder = 2)
 		else:
 			plot.imshow(self.arcgisimage.make_image(), extent = extent, origin = 'lower', zorder = 2)
 
@@ -142,7 +142,7 @@ class heatmap:
 		# copyright and source data info
 		self.smallprint = smallprint = ax.text(
 			1.03, 0,
-			'Total points: %s\n$\copyright$ RapidSOS 2016' % numpoints,
+			'Total points: %s\n$\copyright$ RapidSOS 2016' % self.numpoints,
 			ha='right', va='bottom',
 			size=4,
 			color='#555555',
@@ -152,10 +152,10 @@ class heatmap:
 		a = np.random.random((16, 16))
 
 		cmap = 'inferno'
-		self.heatimage = plot.imshow(heatmap, extent = extent, cmap = cmap, alpha = .4, interpolation = 'nearest', origin = 'lower', zorder = 3)
+		self.heatimage = plot.imshow(self.showmap, extent = extent, cmap = cmap, alpha = .4, interpolation = 'nearest', origin = 'lower', zorder = 3)
 		#plot.show()
 
-		cb = self.colorbar_index(ncolors=self.ncolors, cmap=cmap, shrink=0.5, labels = np.linspace(0, heatmap.max(), self.ncolors))
+		cb = self.colorbar_index(ncolors=self.ncolors, cmap=cmap, shrink=0.5, labels = np.linspace(0, self.showmap.max(), self.ncolors))
 		cb.ax.tick_params(labelsize=6)
 
 		plot.title("")
@@ -163,6 +163,10 @@ class heatmap:
 		plot.savefig('data/scatter.png', dpi = 100, alpha = True)
 
 		plot.show()
+
+		cell_mi_dist = self.get_cell_distance('MILES')
+		cell_km_dist = self.get_cell_distance('KILOMETERS')
+		print("Cell size: ", round(cell_mi_dist, 5), "miles, or ", round(cell_km_dist, 5), " kilometers.")
 
 
 	# Creates 3D array of per-time unit layers, each layer an n/m degree georgraphic array, as well as corresponding data frames
@@ -198,15 +202,15 @@ class heatmap:
 			a += 1
 			b += 1
 
-		self.currentmap = heatmaps
-		self.currentframe = dataframes
+		self.currentmaps = heatmaps
+		self.currentframes = dataframes
 
 
 	def get_time_window_points(self):
 
 		points_list = []
 		for i in range(self.start, self.end):
-			frame = self.currentframe[i]
+			frame = self.currentframes[i]
 			map_points = pd.Series([Point(self.basemap(mapped_x, mapped_y)) for mapped_x, mapped_y in zip(frame['long'], frame['lat'])])
 			points_list += list(map_points.values)
 
@@ -214,18 +218,19 @@ class heatmap:
 		x = [geom.x for geom in raw_points]
 		y = [geom.y for geom in raw_points]
 
-		return x, y , len(raw_points)
+		self.numpoints = len(raw_points)
 
+		return x, y
 
 
 	def get_time_window_heatmap(self):
 
 		heatmap = np.zeros((self.numcells, self.numcells))
 		for i in range(self.start, self.end):
-			if (i < len(self.currentmap)):
-				heatmap = np.add(heatmap, self.currentmap[i])
+			if (i < len(self.currentmaps)):
+				heatmap = np.add(heatmap, self.currentmaps[i])
 
-		return heatmap
+		self.showmap = heatmap
 
 
 	def set_times(self, units):
@@ -257,8 +262,27 @@ class heatmap:
 		self.end = len(self.times) - 1
 
 
-	def change_cellsize(self, cellsize):
-		self.set_heatmaps(cellsize)
+	def cell_point(self):
+		return np.count_nonzero(self.showmap) / self.numpoints
+
+
+	def get_cell_distance(self, mk):
+		lon1_degrees, lon2_degrees = self.basemap.llcrnrlon, self.basemap.llcrnrlon + (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / self.numcells
+		lat1_degrees, lat2_degrees = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / 2, (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / 2
+		lon1, lat1, lon2, lat2 = map(math.radians, [lon1_degrees, lat1_degrees, lon2_degrees, lat2_degrees])
+		dlon = lon2 - lon1
+		dlat = lat2 - lat1
+		a = (math.sin(dlat/2)) ** 2 + math.cos(lat1) * math.cos(lat2) * (math.sin(dlon/2)) ** 2 
+		#c = 2 * math.atan2( math.sqrt(a), math.sqrt(1-a) )
+		c = 2 * math.asin(math.sqrt(a))
+		if mk == 'MILES':
+			return 3959 * c
+		elif mk == 'KILOMETERS':
+			return 6371 * c
+
+
+	def change_numcells(self, numcells):
+		self.set_heatmaps(numcells)
 		self.display(self.start, self.end)
 
 
@@ -273,7 +297,7 @@ class heatmap:
 		self.display(self.start, self.end) 
 
 
-	def __init__(self, file_path, time_units='HOUR', winsize=10):
+	def __init__(self, file_path, time_units='HOUR', winsize=8):
 		#mpl.rc('savefig', dpi=1200)
 		rcParams['figure.figsize'] = winsize, winsize
 
@@ -293,8 +317,12 @@ class heatmap:
 		self.end = 0
 		self.heatmaps = {}
 		self.dataframes = {}
-		self.currentmap = []
-		self.currentframe = []
+		# array of heatmaps for current cellsize
+		self.currentmaps = []
+		self.currentframes = []
+		# heatmap for current time window
+		self.showmap = []
+		self.numpoints = 0
 
 		self.data = self.load_data(file_path)
 		self.dataframe = self.create_dataframe(self.data)
