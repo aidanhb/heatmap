@@ -12,7 +12,8 @@ import numpy as np
 import pandas as pd
 from pylab import rcParams
 import pyproj
-from shapely.geometry import Point, Polygon, MultiPoint, MultiPolygon
+from shapely.geometry import Point, MultiPoint, MultiPolygon
+from matplotlib.patches import Polygon
 import sys
 from scipy.interpolate import griddata
 
@@ -166,12 +167,21 @@ class heatmap:
 		return mc.LinearSegmentedColormap(cmap.name + "_%d" % N, cdict, 1024)
 
 
+	def draw_screen_poly(self, lats, lons, m):
+	    x, y = m( lons, lats )
+	    xy = list(zip(x,y))
+	    print(xy)
+	    poly = Polygon( xy, facecolor='red', alpha=0.4, zorder=7 )
+	    plot.gca().add_patch(poly)
+
+
 	# calculate heatmap and points to display for time window (self.start, self.end).
 	# scatter points on basemap and plot heatmap over it.
 	def display(self, save_as='data/map.png'):
 		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
 		print(extent)
-		cmap = 'cool'
+		temp_cmap = 'winter'
+		calls_cmap = 'plasma'
 
 		# setting heatmap to show and getting data points that lie within time window
 		px, py = [], []
@@ -193,59 +203,76 @@ class heatmap:
 		else:
 			plot.imshow(self.arcgisimage.make_image(), extent = extent, origin = 'lower', zorder = 2)
 
-		self.basemap.scatter(
-			px,
-			py,
-			5, marker='o', lw=.25,
-			facecolor='#0000ff', edgecolor='w',
-			alpha=0.9, antialiased=True,
-			label='Emergencies', zorder=4)
+		# plot red rect
 
-		if not self.value_dataframe.empty:
-			frame = self.value_dataframes[self.start]
+		sample = ((40.856493, -73.869578), (40.857418, -73.868612))
+		lats, lons = [sample[0][0], sample[1][0], sample[1][0], sample[0][0]], [sample[0][1], sample[0][1], sample[1][1], sample[1][1]]
+		self.draw_screen_poly(lats, lons, self.basemap)
 
-			spatial_resolution = min((self.max_lat - self.min_lat), (self.max_long - self.min_long)) / 20
-	 
-			vx = np.array(frame['long'].tolist())
-			vy = np.array(frame['lat'].tolist())
-			v = np.array(frame['value'].tolist())
-			   
-			yinum = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / spatial_resolution
-			xinum = (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / spatial_resolution
-			vyi = np.linspace(self.basemap.llcrnrlat, self.basemap.urcrnrlat + spatial_resolution, xinum)
-			vxi = np.linspace(self.basemap.llcrnrlon, self.basemap.urcrnrlon + spatial_resolution, yinum)
-			vxi, vyi = np.meshgrid(vxi, vyi)
-			xi = np.c_[vx.ravel(),vy.ravel()]
-			xx = np.c_[vxi.ravel(),vyi.ravel()]
-			
-			data = griddata((vx, vy), v, (vxi, vyi), method='cubic')
-
-			self.basemap.contourf(
-				vxi,
-				vyi,
-				data,
-				cmap=cmap, alpha=.4, zorder=3, extent=extent)
-		else:
-			plot.imshow(self.showmap, extent=extent, cmap=cmap, alpha=.4, origin='lower', zorder=3)
-
-		# copyright and source data info
-		ax.text(
-			.02, .9,
-			'{:%m-%d-%Y\n%H:%M}'.format(self.start, self.numpoints),
-			ha='left', va='bottom',
-			size=18,
-			fontproperties=font.FontProperties(family='sans-serif', weight='bold', size='large'),
-			color='#ffffff',
-			transform=ax.transAxes,
-			zorder = 5)
+		"""self.basemap.scatter(
+									px,
+									py,
+									5, marker='o', lw=.25,
+									facecolor='#ff0000', edgecolor='w',
+									alpha=0.9, antialiased=True,
+									label='Emergencies', zorder=4)
+						
+								if not self.value_dataframe.empty:
+									frame = self.value_dataframes[self.start]
+						
+									spatial_resolution = min((self.max_lat - self.min_lat), (self.max_long - self.min_long)) / self.numcells
+							 
+									vx = np.array(frame['long'].tolist())
+									vy = np.array(frame['lat'].tolist())
+									v = np.array(frame['value'].tolist())
+									   
+									yinum = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / spatial_resolution
+									xinum = (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / spatial_resolution
+									vyi = np.linspace(self.basemap.llcrnrlat, self.basemap.urcrnrlat + spatial_resolution, xinum)
+									vxi = np.linspace(self.basemap.llcrnrlon, self.basemap.urcrnrlon + spatial_resolution, yinum)
+									vxi, vyi = np.meshgrid(vxi, vyi)
+									xi = np.c_[vx.ravel(),vy.ravel()]
+									xx = np.c_[vxi.ravel(),vyi.ravel()]
+									
+									data = griddata((vx, vy), v, (vxi, vyi), method='cubic')
+						
+									self.basemap.contourf(
+										vxi,
+										vyi,
+										data,
+										cmap=temp_cmap, 
+										alpha=.3, 
+										zorder=3, 
+										extent=extent)
+								
+								plot.imshow(
+									self.showmap, 
+									extent=extent, 
+									cmap=calls_cmap, 
+									alpha=.3, 
+									origin='lower', 
+									zorder=5,
+									vmin=0,
+									vmax=5)
+						
+								# copyright and source data info
+								ax.text(
+									.02, .85,
+									'{:%m-%d-%Y\n%H:%M}'.format(self.start, self.numpoints),
+									ha='left', va='bottom',
+									size=24,
+									fontproperties=font.FontProperties(family='sans-serif', weight='bold'),
+									color='#ffffff',
+									transform=ax.transAxes,
+									zorder = 6)"""
 		# unifinished hexmap implementation.
 		#plot.hexbin(np.array(x), np.array(y), extent = extent, cmap = cmap, alpha = .4, gridsize = self.numcells, edgecolors = 'none')
 
 		mn = int(self.showmap.min())
 		mx = int(self.showmap.max())
-		if not self.value_dataframe.empty:
-			mn = int(v.min())
-			mx = int(v.max())
+		#if not self.value_dataframe.empty:
+		#	mn = int(v.min())
+		#	mx = int(v.max())
 
 		#cb = self.colorbar_index(mn, mx, mx - mn, cmap=cmap, shrink=0.5)
 		#cb.ax.tick_params(labelsize=6)
@@ -416,23 +443,23 @@ class heatmap:
 			return 6371 * c
 
 
-	def change_numcells(self, numcells):
+	def change_numcells(self, numcells, save_as='data/map.png'):
 		self.split_data_by_time(numcells)
 		self.set_showmap()
-		self.display()
+		self.display(save_as)
 
 
-	def change_time_units(self, units):
+	def change_time_units(self, units, save_as='data/map.png'):
 		self.set_times(units)
 		self.split_data_by_time(self.numcells)
 		self.set_showmap()
-		self.display()
+		self.display(save_as)
 
 
-	def change_time_window(self, start, end):
+	def change_time_window(self, start, end, save_as='data/map.png'):
 		self.start = start
 		self.end = end
-		self.display() 
+		self.display(save_as) 
 
 
 	def __init__(self, point_file_path, value_file_path=None, time_units='HOUR', winsize=10):
@@ -443,7 +470,7 @@ class heatmap:
 
 		# The number of cells in the mesh will be self.numcells x self.numcells
 		# Each cell will be colored based on the count of points that lie within it.
-		self.numcells = 30
+		self.numcells = 50
 		self.ncolors = 5
 
 		self.min_lat = 91
