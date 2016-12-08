@@ -133,8 +133,6 @@ class heatmap:
 		mappable.set_array([])
 		mappable.set_clim(-.5, ncolors+.5)
 		colorbar = plot.colorbar(mappable, **kwargs)
-		#print(ncolors)
-		#print(np.linspace(0, ncolors, ncolors + 1))
 		colorbar.set_ticks(np.linspace(0, ncolors, ncolors + 1))
 		colorbar.set_ticklabels(np.linspace(mn, mx, ncolors + 1))
 
@@ -170,7 +168,6 @@ class heatmap:
 	def draw_screen_poly(self, lats, lons, m):
 	    x, y = m( lons, lats )
 	    xy = list(zip(x,y))
-	    print(xy)
 	    poly = Polygon( xy, facecolor='red', alpha=0.4, zorder=7 )
 	    plot.gca().add_patch(poly)
 
@@ -179,7 +176,6 @@ class heatmap:
 	# scatter points on basemap and plot heatmap over it.
 	def display(self, save_as='data/map.png'):
 		extent = [self.basemap.llcrnrlon, self.basemap.urcrnrlon, self.basemap.llcrnrlat, self.basemap.urcrnrlat]
-		print(extent)
 		temp_cmap = 'winter'
 		calls_cmap = 'plasma'
 
@@ -205,81 +201,80 @@ class heatmap:
 
 		# plot red rect
 
-		sample = ((40.856493, -73.869578), (40.857418, -73.868612))
-		lats, lons = [sample[0][0], sample[1][0], sample[1][0], sample[0][0]], [sample[0][1], sample[0][1], sample[1][1], sample[1][1]]
-		self.draw_screen_poly(lats, lons, self.basemap)
+		#sample = ((40.856493, -73.869578), (40.857418, -73.868612))
+		#lats, lons = [sample[0][0], sample[1][0], sample[1][0], sample[0][0]], [sample[0][1], sample[0][1], sample[1][1], sample[1][1]]
+		#self.draw_screen_poly(lats, lons, self.basemap)
 
-		"""self.basemap.scatter(
-									px,
-									py,
-									5, marker='o', lw=.25,
-									facecolor='#ff0000', edgecolor='w',
-									alpha=0.9, antialiased=True,
-									label='Emergencies', zorder=4)
-						
-								if not self.value_dataframe.empty:
-									frame = self.value_dataframes[self.start]
-						
-									spatial_resolution = min((self.max_lat - self.min_lat), (self.max_long - self.min_long)) / self.numcells
-							 
-									vx = np.array(frame['long'].tolist())
-									vy = np.array(frame['lat'].tolist())
-									v = np.array(frame['value'].tolist())
-									   
-									yinum = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / spatial_resolution
-									xinum = (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / spatial_resolution
-									vyi = np.linspace(self.basemap.llcrnrlat, self.basemap.urcrnrlat + spatial_resolution, xinum)
-									vxi = np.linspace(self.basemap.llcrnrlon, self.basemap.urcrnrlon + spatial_resolution, yinum)
-									vxi, vyi = np.meshgrid(vxi, vyi)
-									xi = np.c_[vx.ravel(),vy.ravel()]
-									xx = np.c_[vxi.ravel(),vyi.ravel()]
-									
-									data = griddata((vx, vy), v, (vxi, vyi), method='cubic')
-						
-									self.basemap.contourf(
-										vxi,
-										vyi,
-										data,
-										cmap=temp_cmap, 
-										alpha=.3, 
-										zorder=3, 
-										extent=extent)
-								
-								plot.imshow(
-									self.showmap, 
-									extent=extent, 
-									cmap=calls_cmap, 
-									alpha=.3, 
-									origin='lower', 
-									zorder=5,
-									vmin=0,
-									vmax=5)
-						
-								# copyright and source data info
-								ax.text(
-									.02, .85,
-									'{:%m-%d-%Y\n%H:%M}'.format(self.start, self.numpoints),
-									ha='left', va='bottom',
-									size=24,
-									fontproperties=font.FontProperties(family='sans-serif', weight='bold'),
-									color='#ffffff',
-									transform=ax.transAxes,
-									zorder = 6)"""
+		#self.basemap.scatter(
+		#	px,
+		#	py,
+		#	5, marker='o', lw=.25,
+		#	facecolor='#ff0000', edgecolor='w',
+		#	alpha=0.9, antialiased=True,
+		#	label='Emergencies', zorder=4)
+
+		if not self.value_dataframe.empty:
+			frame = self.value_dataframes[self.start]
+
+			spatial_resolution = min((self.max_lat - self.min_lat), (self.max_long - self.min_long)) / self.numcells
+	 
+			vx = np.array(frame['long'].tolist())
+			vy = np.array(frame['lat'].tolist())
+			v = np.array(frame['value'].tolist())
+			   
+			yinum = (self.basemap.urcrnrlat - self.basemap.llcrnrlat) / spatial_resolution
+			xinum = (self.basemap.urcrnrlon - self.basemap.llcrnrlon) / spatial_resolution
+			vyi = np.linspace(self.basemap.llcrnrlat, self.basemap.urcrnrlat + spatial_resolution, xinum)
+			vxi = np.linspace(self.basemap.llcrnrlon, self.basemap.urcrnrlon + spatial_resolution, yinum)
+			vxi, vyi = np.meshgrid(vxi, vyi)
+			xi = np.c_[vx.ravel(),vy.ravel()]
+			xx = np.c_[vxi.ravel(),vyi.ravel()]
+			
+			data = griddata((vx, vy), v, (vxi, vyi), method='cubic')
+
+			self.basemap.contourf(
+				vxi,
+				vyi,
+				data,
+				cmap=temp_cmap, 
+				alpha=.3, 
+				zorder=3, 
+				extent=extent,
+				vmin=32,
+				antialiased=True)
+		
+		plot.imshow(
+			self.showmap, 
+			extent=extent, 
+			cmap=calls_cmap, 
+			alpha=.3, 
+			origin='lower', 
+			zorder=5,
+			vmin=0,
+			vmax=5)
+
+		# copyright and source data info
+		ax.text(
+			.02, .85,
+			'{:%m-%d-%Y\n%H:%M}'.format(self.start, self.numpoints),
+			ha='left', va='bottom',
+			size=24,
+			fontproperties=font.FontProperties(family='sans-serif', weight='bold', size='large'),
+			color='#ffffff',
+			transform=ax.transAxes,
+			zorder = 11)
 		# unifinished hexmap implementation.
 		#plot.hexbin(np.array(x), np.array(y), extent = extent, cmap = cmap, alpha = .4, gridsize = self.numcells, edgecolors = 'none')
 
 		mn = int(self.showmap.min())
 		mx = int(self.showmap.max())
-		#if not self.value_dataframe.empty:
-		#	mn = int(v.min())
-		#	mx = int(v.max())
 
 		#cb = self.colorbar_index(mn, mx, mx - mn, cmap=cmap, shrink=0.5)
 		#cb.ax.tick_params(labelsize=6)
 
 		#plot.title("")
 		plot.tight_layout()
-		plot.savefig(save_as, dpi = 100, alpha = True)
+		plot.savefig(save_as, dpi = 300, alpha = True)
 
 		plot.show()
 

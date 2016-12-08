@@ -6,11 +6,16 @@ import forecastio as fc
 import math
 import random
 
-def temp_maps(lat1, lat2, lon1, lon2, times):
+def temp_maps(lat1, lat2, lon1, lon2, times, prediction=False):
+	# We'll be not only writing our data to files, but returning it in dictionaries to analyze it
+	# using other functions in this program
 	maps = {}
 	marrays = {}
+	filename = 'data/temps.csv'
+	if prediction:
+		filename = 'data/predicted_temps.csv'
 
-	with open('data/temps.csv', 'w') as csvfile:
+	with open(filename, 'w') as csvfile:
 		fieldnames = ['time', 'lat', 'lon', 'temp']
 		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 
@@ -25,15 +30,30 @@ def temp_maps(lat1, lat2, lon1, lon2, times):
 			for i, lat in enumerate(lats):
 				for j, lon in enumerate(lons):
 					temp = 54
-					ffront = ffront_fn(lat1, lat2, lon1, lon2, time, times[0], times[-1])[0](lon)
-					if ffront < lat:
+					ffront = obs_fn(lat1, lat2, lon1, lon2, time, times[0], times[-1])[0](lon)
+
+					if prediction:
 						temp = 28
-					dlat = lat - ffront
-					if abs(dlat) <= (lat2 - lat1) / 5:
-						if dlat < 0:
-							temp -= 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
-						else:
-							temp += 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
+						ffront = pred_fn(lat1, lat2, lon1, lon2, time, times[0], times[-1])[0](lon)
+						bfront = pred_fn(lat1, lat2, lon1, lon2, time, times[0], times[-1])[0](lon) + (lat2 - lat1) * .75
+						if ffront < lat and lat < bfront:
+							temp = 54
+						dlat = min(lat - ffront, bfront - lat)
+						if abs(dlat) <= (lat2 - lat1) / 5:
+							if dlat > 0:
+								temp -= 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
+							else:
+								temp += 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
+
+					else:
+						if ffront < lat:
+							temp = 28
+						dlat = lat - ffront
+						if abs(dlat) <= (lat2 - lat1) / 5:
+							if dlat < 0:
+								temp -= 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
+							else:
+								temp += 26 * (1 - abs(dlat) / ((lat2 - lat1) / 5))**4
 
 					writer.writerow({'time': str(time), 'lat': str(lat), 'lon': str(lon), 'temp': str(temp)})
 					m.append(((lat, lon), temp))
@@ -47,10 +67,13 @@ def temp_maps(lat1, lat2, lon1, lon2, times):
 
 
 
-def call_map(lat_1, lat_2, lon_1, lon_2, times, weathermaps, house_zones, road_zones):
+def call_map(lat_1, lat_2, lon_1, lon_2, times, weathermaps, house_zones, road_zones, prediction=False):
 	m = {}
+	filename = 'data/calls.csv'
+	if prediction:
+		filename = 'data/predicted_calls.csv'
 
-	with open('data/calls.csv', 'w') as csvfile:
+	with open(filename, 'w') as csvfile:
 		fieldnames = ['time', 'lat', 'lon']
 		writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
 		full_zone = ((lat_1, lon_1), (lat_2, lon_2))
@@ -90,7 +113,11 @@ def call_map(lat_1, lat_2, lon_1, lon_2, times, weathermaps, house_zones, road_z
 
 			total_rd_A = 0
 			frac_rd_A = 0
-			cold_zones = [z for z in road_zones if z[0][0] >= ffront_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](z[0][1])]
+			cold_zones = [z for z in road_zones if z[0][0] >= obs_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](z[0][1])]
+			if prediction:
+				cold_zones = [z for z in road_zones if \
+				z[0][0] <= pred_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](z[0][1])\
+				or z[1][0] >= pred_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](z[0][1]) + (lat_2 - lat_1) * .75]
 
 			for z in road_zones:
 				total_rd_A += (z[1][0] - z[0][0]) * (z[1][1] - z[0][1])
@@ -131,11 +158,26 @@ def call_map(lat_1, lat_2, lon_1, lon_2, times, weathermaps, house_zones, road_z
 					zone = random.choice(cold_zones)
 					lon1, lon2 = zone[0][1], zone[1][1]
 					lon = lon1 + ((lon2 - lon1) * random.random())
-					front_intersect = ffront_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](lon)
-					lat1, lat2 = max(front_intersect, zone[0][0]), zone[1][0]
-					lat = lat1 + (lat2 - lat1) * random.random()
-					writer.writerow({'time': str(time), 'lat': str(lat), 'lon': str(lon)})
-					points.append((lat, lon))
+					front_intersect = obs_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](lon)
+					if prediction:
+						front_top = pred_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](lon) + (lat_2 - lat_1) * .75
+						front_intersect = pred_fn(lat_1, lat_2, lon_1, lon_2, time, times[0], times[-1])[0](lon)
+						if zone[0][0] <= front_intersect:
+							lat1, lat2 = zone[0][0], min(zone[1][0], front_intersect)
+							lat = lat1 + (lat2 - lat1) * random.random()
+							writer.writerow({'time': str(time), 'lat': str(lat), 'lon': str(lon)})
+							points.append((lat, lon))
+						else: # zone[1][0] >= front_top
+							lat1, lat2 = max(zone[0][0], min(front_top, lat_2)), zone[1][0]
+							lat = lat1 + (lat2 - lat1) * random.random()
+							writer.writerow({'time': str(time), 'lat': str(lat), 'lon': str(lon)})
+							points.append((lat, lon))
+						
+					else:
+						lat1, lat2 = max(front_intersect, zone[0][0]), zone[1][0]
+						lat = lat1 + (lat2 - lat1) * random.random()
+						writer.writerow({'time': str(time), 'lat': str(lat), 'lon': str(lon)})
+						points.append((lat, lon))
 
 			m[time] = points
 
@@ -177,9 +219,7 @@ def ave_hourly_calls(lat1, lat2, lon1, lon2, points_per_time):
 
 	return times, num_points
 
-def ffront_fn(lat1, lat2, lon1, lon2, time, start, end):
-	#window = 3600 * 18
-	#pd = (time % window / window)
+def obs_fn(lat1, lat2, lon1, lon2, time, start, end):
 	pd = (end - time) / (end - start)
 	dlon = lon2 - lon1
 	dlat = lat2 - lat1
@@ -189,6 +229,18 @@ def ffront_fn(lat1, lat2, lon1, lon2, time, start, end):
 		return .75 * (x - xoffset) + yoffset
 	def fny(y):
 		return (4.0 / 3.0) * (y - yoffset) + xoffset
+	return fnx, fny
+
+def pred_fn(lat1, lat2, lon1, lon2, time, start, end):
+	pd = (end - time) / (end - start)
+	dlon = lon2 - lon1
+	dlat = (lat2 - lat1) * 1.75
+	xoffset = (lon2 + lon1) / 2
+	yoffset = lat2 - ((1.0 - pd) * dlat)
+	def fnx(x):
+		return 220 * (x - xoffset) ** 2 + yoffset
+	def fny(y):
+		return (4.0 / 3.0) * (y - yoffset) + xoffset # Incorrect, but not currently used
 	return fnx, fny
 
 def get_times(start, end):
@@ -216,8 +268,8 @@ def main(start, end, prediction=False):
 
 	times = get_times(start, end)
 	#print(times)
-	tms, tarrays = temp_maps(tmp_min_lat, tmp_max_lat, tmp_min_lon, tmp_max_lon, times)
-	cms = call_map(min_lat, max_lat, min_lon, max_lon, times, tarrays, house_zones, road_zones)
+	tms, tarrays = temp_maps(tmp_min_lat, tmp_max_lat, tmp_min_lon, tmp_max_lon, times, prediction)
+	cms = call_map(min_lat, max_lat, min_lon, max_lon, times, tarrays, house_zones, road_zones, prediction)
 
 	# rectangle of focus for creation of ave_temp/call count line plot
 	sample = ((40.856493, -73.869578), (40.857418, -73.868612))
