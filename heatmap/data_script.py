@@ -2,7 +2,6 @@
 import numpy as np
 import csv
 import datetime as dt
-import forecastio as fc
 import math
 import random
 
